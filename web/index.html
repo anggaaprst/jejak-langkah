@@ -326,7 +326,7 @@ function journeyHTML(j){
       <button class="ghost" id="to-list">← Semua jejak</button>${bubbleBtn()}
       <div class="row"><button class="ghost" id="copy" title="Salin ringkasan untuk ditanyakan ke Claude">Salin ringkasan</button><button class="ghost" id="keys" title="Shortcut (?)">⌨</button></div>
     </div>
-    <div><div class="eyebrow">${esc(j.device)}${j.contoh?' · contoh':''}</div><h2 style="font-size:1.5rem;margin-top:4px">${esc(j.title)}</h2></div>
+    <div><div class="eyebrow">${esc(j.device)}${j.contoh?' · contoh':''}</div><div class="row" style="gap:4px;align-items:center;margin-top:4px"><h2 style="font-size:1.5rem;min-width:0;overflow-wrap:anywhere">${esc(j.title)}</h2><button class="ghost" id="rename" title="Ganti nama jejak (R)" aria-label="Ganti nama jejak">✎ Ganti nama</button></div></div>
 
     <section class="now" aria-label="Posisi sekarang">
       <div class="step-no">KAMU DI SINI · LANGKAH ${path.length-1}${bn?' · CABANG '+bn:''}</div>
@@ -337,6 +337,7 @@ function journeyHTML(j){
         <button data-s="fail" aria-pressed="${st==='fail'}">✗ Gagal</button>
         <button data-s="pending" aria-pressed="${st==='pending'}">Belum tahu</button>
         <button class="ghost" id="edit-cur">Ubah</button>
+        ${cur.parent?`<button class="ghost danger" id="del-cur" title="Hapus langkah ini (Delete)">Hapus langkah</button>`:''}
       </div>
     </section>
 
@@ -351,6 +352,8 @@ function bindJourney(j){
   $("#to-list").onclick=()=>{openId=null;render()};
   document.querySelectorAll(".status-btns button[data-s]").forEach(b=>b.onclick=()=>setStatus(j,b.dataset.s));
   $("#edit-cur").onclick=()=>openEdit(j);
+  {const dc=$("#del-cur");if(dc)dc.onclick=()=>deleteStep(j)}
+  $("#rename").onclick=()=>openRename(j);
   document.querySelectorAll("[data-jump]").forEach(el=>{const go=()=>{if(j.current===el.dataset.jump)return;j.current=el.dataset.jump;save(j);render()};el.onclick=go;el.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();go()}}});
   document.querySelectorAll("[data-addunder]").forEach(b=>b.onclick=()=>openAdd(j,b.dataset.addunder));
   $("#copy").onclick=()=>copySummary(j);
@@ -439,12 +442,40 @@ function openEdit(j){
     $("#ed-text").focus();$("#ed-c").onclick=closeSheet;
     $("#edf").onsubmit=e=>{e.preventDefault();c.text=$("#ed-text").value.trim()||c.text;c.note=$("#ed-note").value.trim();save(j);closeSheet();render();toast("Langkah diperbarui")};});
 }
+function subtree(j,id){const out=[];const walk=x=>{out.push(j.nodes[x]);kids(j,x).forEach(k=>walk(k.id))};walk(id);return out}
+function deleteStep(j,id,after){
+  const n=j.nodes[id||j.current];if(!n||!n.parent){toast("Langkah awal tidak bisa dihapus");return}
+  const gone=subtree(j,n.id);const extra=gone.length-1;
+  const doIt=()=>{
+    const backup=gone.map(x=>({...x}));const prevCur=j.current;
+    const onPath=pathTo(j,j.current).some(x=>x.id===n.id);
+    gone.forEach(x=>delete j.nodes[x.id]);
+    if(onPath)j.current=n.parent;
+    save(j);closeSheet();(after||render)();
+    toast(extra?`Langkah + ${extra} langkah di bawahnya dihapus`:"Langkah dihapus",{label:"Urungkan",fn:()=>{backup.forEach(x=>j.nodes[x.id]=x);j.current=prevCur;save(j);(after||render)()}});
+  };
+  if(!extra){doIt();return}
+  sheet(`<h2>Hapus langkah ini?</h2><p class="muted" style="margin:0">"${esc(n.text)}" punya ${extra} langkah/cabang di bawahnya. Semuanya ikut terhapus.</p>
+    <div class="row"><button id="yes" style="background:var(--fail);border-color:var(--fail);color:var(--surface)">Hapus semuanya</button><button id="no">Batal</button></div>`,()=>{
+    $("#yes").onclick=doIt;$("#no").onclick=closeSheet;});
+}
+function openRename(j){
+  sheet(`<h2>Ganti nama jejak</h2><form id="rnf" style="display:flex;flex-direction:column;gap:12px">
+    <label class="field">Nama jejak<input type="text" id="rn-text" value="${esc(j.title)}" required></label>
+    <div class="row"><button class="primary" type="submit">Simpan</button><button type="button" id="rn-c">Batal</button></div></form>`,()=>{
+    const i=$("#rn-text");i.focus();i.select();$("#rn-c").onclick=closeSheet;
+    $("#rnf").onsubmit=e=>{e.preventDefault();const t=i.value.trim();if(!t||t===j.title){closeSheet();return}
+      const root=j.nodes[j.rootId];if(root&&root.text==="Mulai: "+j.title)root.text="Mulai: "+t;
+      j.title=t;delete j.contoh;save(j);closeSheet();render();toast("Nama jejak diganti")};});
+}
 function openKeys(){
   sheet(`<h2>Shortcut keyboard</h2><div class="keys">
     <span><kbd>N</kbd></span><span>Tambah langkah berikutnya (pop-up)</span>
     <span><kbd>B</kbd></span><span>Mundur 1 langkah</span>
     <span><kbd>J</kbd></span><span>Pindah ke cabang lain</span>
     <span><kbd>1</kbd> / <kbd>2</kbd></span><span>Tandai langkah sekarang berhasil / gagal</span>
+    <span><kbd>Delete</kbd></span><span>Hapus langkah sekarang</span>
+    <span><kbd>R</kbd></span><span>Ganti nama jejak</span>
         <span><kbd>Enter</kbd></span><span>Simpan langkah di pop-up</span>
     <span><kbd>Esc</kbd></span><span>Tutup pop-up</span></div>
     <p class="notice">Di HP, pakai tombol di bar bawah. Agar cepat dibuka, simpan halaman ini ke layar utama HP atau pin di browser laptop.</p>
@@ -481,6 +512,7 @@ document.addEventListener("keydown",e=>{
   const k=e.key.toLowerCase();
   if(k==="n"){e.preventDefault();openAdd(j)} else if(k==="b"){goBack(j)} else if(k==="j"){goFork(j)}
   else if(k==="1"){setStatus(j,"ok")} else if(k==="2"){setStatus(j,"fail")}
+  else if(k==="delete"){deleteStep(j)} else if(k==="r"){e.preventDefault();openRename(j)}
   else if(k==="f"){$("#toggle-fork")?.click()}
 });
 
@@ -569,7 +601,7 @@ function renderBubble(){
     <div class="bhead"><select id="b-sel" aria-label="Pilih jejak">${arr.map(x=>`<option value="${x.id}" ${x.id===j.id?'selected':''}>${esc(x.title)}</option>`).join("")}</select><button class="ghost" id="b-open" title="Buka peta lengkap">Peta</button>${close}</div>
     ${recent.length?`<div class="btrail">${recent.map(n=>`<span class="${n.status}">${esc(n.text)}</span>`).join('<i>›</i>')}</div>`:''}
     <div class="bnow"><div class="step-no">KAMU DI SINI · LANGKAH ${path.length-1}${bn?' · CABANG '+bn:''}</div><div class="txt">${esc(cur.text)}</div>
-      <div class="row status-btns"><button data-s="ok" aria-pressed="${cur.status==='ok'}">✓ Berhasil</button><button data-s="fail" aria-pressed="${cur.status==='fail'}">✗ Gagal</button><button id="b-back" ${cur.parent?'':'disabled'}>↶ Mundur</button></div></div>
+      <div class="row status-btns"><button data-s="ok" aria-pressed="${cur.status==='ok'}">✓ Berhasil</button><button data-s="fail" aria-pressed="${cur.status==='fail'}">✗ Gagal</button><button id="b-back" ${cur.parent?'':'disabled'}>↶ Mundur</button>${cur.parent?'<button class="ghost danger" id="b-del" title="Hapus langkah ini">Hapus</button>':''}</div></div>
     ${fk?`<div><div class="eyebrow">Cabang dari: ${esc(fk.text.slice(0,44))}</div><div class="bchips">${ks.map((k,i)=>`<button data-go="${k.id}" class="${onPath.has(k.id)?'on':''} ${k.status}">${i+1}. ${{ok:"✓ ",fail:"✗ ",pending:""}[k.status]}${esc(k.text.slice(0,30))}</button>`).join("")}</div></div>`:''}
     <form id="b-add" class="badd"><input type="text" id="b-text" placeholder="Tulis langkah yang kamu lakukan…" enterkeyhint="done" autocomplete="off"><button class="primary" type="submit">+ Langkah</button></form>
     <div><button class="ghost" id="b-branch">⑂ Simpan sebagai cabang lain</button></div>
@@ -584,6 +616,7 @@ function bindBubble(j){
   if(!j)return;
   $("#b-sel").onchange=e=>{openId=e.target.value;try{localStorage.setItem(LAST_KEY,openId)}catch(_){}e.target.blur();renderBubble()};
   document.querySelectorAll(".bnow [data-s]").forEach(b=>b.onclick=()=>{j.nodes[j.current].status=b.dataset.s;save(j);renderBubble();if(b.dataset.s==="fail"&&forkOf(j))toast("Gagal? Ketuk cabang lain di bawah")});
+  {const bd=$("#b-del");if(bd)bd.onclick=()=>deleteStep(j,null,renderBubble)}
   $("#b-back").onclick=()=>{const c=j.nodes[j.current];if(c.parent){j.current=c.parent;save(j);renderBubble()}};
   document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{j.current=newestLeaf(j,b.dataset.go).id;save(j);renderBubble()});
   $("#b-add").onsubmit=e=>{e.preventDefault();const t=$("#b-text").value.trim();if(!t)return;addStep(j,t,"",false);$("#b-text").blur();renderBubble();toast("Langkah dicatat")};
