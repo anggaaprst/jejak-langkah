@@ -1,0 +1,16 @@
+{
+  "name": "Jejak Langkah",
+  "short_name": "Jejak",
+  "description": "Catatan langkah demi langkah saat mencoba setting, dengan percabangan.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#EDF0EC",
+  "theme_color": "#0E6B60",
+  "lang": "id",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

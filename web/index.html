@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0E6B60">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}img{max-width:100%}[hidden]{display:none!important}</style>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+</head>
+<body>
+<title>Jejak Langkah</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: satu kolom seperti buku catatan lapangan — posisi sekarang di atas, jalur yang dilalui, lalu peta semua cabang */
+:root{
+  --bg:#EDF0EC; --surface:#F8FAF7; --ink:#16231F; --muted:#5B6B65; --line:#C9D2CC;
+  --accent:#0E6B60; --accent-ink:#FFFFFF; --mark:#E2B23A; --ok:#2F7D3B; --fail:#B5402F; --pending:#7A8781;
+  --shadow:0 1px 0 rgba(22,35,31,.06),0 6px 20px -12px rgba(22,35,31,.35);
+  --f-display:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#111815; --surface:#18221E; --ink:#E4ECE7; --muted:#97A69F; --line:#2C3933;
+  --accent:#4FB7A7; --accent-ink:#0B1412; --mark:#E8BD4C; --ok:#6CC07A; --fail:#EE7A66; --pending:#8C9A94;
+  --shadow:0 1px 0 rgba(0,0,0,.3),0 8px 24px -14px rgba(0,0,0,.8); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111815; --surface:#18221E; --ink:#E4ECE7; --muted:#97A69F; --line:#2C3933;
+  --accent:#4FB7A7; --accent-ink:#0B1412; --mark:#E8BD4C; --ok:#6CC07A; --fail:#EE7A66; --pending:#8C9A94;
+  --shadow:0 1px 0 rgba(0,0,0,.3),0 8px 24px -14px rgba(0,0,0,.8); color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5}
+.wrap{max-width:760px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 120px;display:flex;flex-direction:column;gap:22px}
+h1,h2,h3{font-family:var(--f-display);font-stretch:85%;margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1{font-size:clamp(1.9rem,6vw,2.6rem);font-weight:800;line-height:1}
+h2{font-size:1.15rem;font-weight:700}
+.eyebrow{font-family:var(--f-mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
+.muted{color:var(--muted)}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:9px 14px;font-weight:500;display:inline-flex;align-items:center;gap:8px;min-height:42px}
+button:hover{border-color:var(--accent)}
+button:focus-visible,input:focus-visible,textarea:focus-visible,.tree-node:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button.ghost{background:transparent;border-color:transparent;padding-inline:8px}
+button.danger{color:var(--fail)}
+kbd{font-family:var(--f-mono);font-size:.7rem;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--muted);background:var(--bg)}
+input[type=text],textarea{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 12px}
+textarea{min-height:70px;resize:vertical}
+label.field{display:flex;flex-direction:column;gap:6px;font-size:.85rem;color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.sync{cursor:pointer;font-family:var(--f-mono);font-size:.72rem;color:var(--muted);display:flex;align-items:center;gap:6px}
+.sync i{width:7px;height:7px;border-radius:50%;background:var(--pending);display:inline-block}
+.sync.on i{background:var(--ok)}
+
+/* daftar jejak */
+.jlist{display:flex;flex-direction:column;gap:10px}
+.jcard{display:grid;grid-template-columns:1fr auto;gap:4px 12px;text-align:left;width:100%;padding:14px 16px;border-radius:12px;background:var(--surface);box-shadow:var(--shadow);border:1px solid var(--line)}
+.jcard .t{font-weight:600;min-width:0}
+.jcard .m{font-family:var(--f-mono);font-size:.75rem;color:var(--muted);grid-column:1/-1;display:flex;gap:12px;flex-wrap:wrap}
+.chip{font-family:var(--f-mono);font-size:.7rem;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.chip.contoh{border-color:var(--mark);color:var(--ink);background:color-mix(in srgb,var(--mark) 22%,transparent)}
+.newj{display:flex;flex-direction:column;gap:10px;padding:16px;border:1px dashed var(--line);border-radius:12px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{border:0;border-radius:0;min-height:38px}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--bg)}
+
+/* posisi sekarang */
+.now{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:16px;display:flex;flex-direction:column;gap:12px;position:relative;overflow:hidden}
+.now::before{content:"";position:absolute;inset:0 auto 0 0;width:6px;background:var(--mark)}
+.now .step-no{font-family:var(--f-mono);font-size:.75rem;color:var(--muted)}
+.now .txt{font-size:1.15rem;font-weight:600;line-height:1.35;overflow-wrap:anywhere}
+.now .note{color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+.status-btns button[aria-pressed=true][data-s=ok]{background:var(--ok);border-color:var(--ok);color:var(--surface)}
+.status-btns button[aria-pressed=true][data-s=fail]{background:var(--fail);border-color:var(--fail);color:var(--surface)}
+.status-btns button[aria-pressed=true][data-s=pending]{background:var(--ink);color:var(--bg)}
+.actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.actions button{justify-content:center;flex-direction:column;gap:2px;padding:10px 6px;min-height:64px;text-align:center;font-size:.85rem}
+.actions button .ic{font-size:1.2rem;line-height:1}
+.actions button:disabled{opacity:.4;cursor:not-allowed}
+
+/* jalur */
+.path{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.path li{display:grid;grid-template-columns:34px 1fr;gap:10px;position:relative;padding-bottom:12px}
+.path li::before{content:"";position:absolute;left:16px;top:26px;bottom:0;width:2px;background:var(--line)}
+.path li:last-child::before{display:none}
+.dot{width:34px;height:26px;border-radius:7px;display:grid;place-items:center;font-family:var(--f-mono);font-size:.72rem;font-weight:500;border:2px solid var(--pending);color:var(--ink);background:var(--surface);font-variant-numeric:tabular-nums}
+.dot.ok{border-color:var(--ok)} .dot.fail{border-color:var(--fail);text-decoration:line-through} .dot.cur{background:var(--mark);border-color:var(--mark);color:#16231F}
+.path .body{min-width:0;padding-top:2px}
+.path .body button{all:unset;cursor:pointer;overflow-wrap:anywhere}
+.path .body button:focus-visible{outline:2px solid var(--accent)}
+.fork-tag{font-family:var(--f-mono);font-size:.68rem;color:var(--accent);margin-left:6px;white-space:nowrap}
+
+/* peta cabang */
+.tree,.tree ul{list-style:none;margin:0;padding:0}
+.tree ul{margin-left:14px;padding-left:12px;border-left:2px solid var(--line)}
+.tree li{margin:4px 0}
+.tree-node{display:flex;gap:8px;align-items:baseline;padding:5px 8px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+.tree-node:hover{border-color:var(--line)}
+.tree-node.onpath{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.tree-node.cur{border-color:var(--mark);background:color-mix(in srgb,var(--mark) 20%,transparent)}
+.tree-node .s{font-family:var(--f-mono);font-size:.75rem;flex:none;width:1.1em;text-align:center}
+.tree-node .s.ok{color:var(--ok)} .tree-node .s.fail{color:var(--fail)} .tree-node .s.pending{color:var(--pending)}
+.tree-node .x{min-width:0;overflow-wrap:anywhere}
+.tree-node.failnode .x{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--fail)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--f-mono);font-size:.72rem;color:var(--muted)}
+
+
+/* pohon ke bawah */
+.treewrap{overflow-x:auto;overflow-y:hidden;margin-inline:-4px;padding:8px 4px 16px;-webkit-overflow-scrolling:touch}
+.treein{display:flex;justify-content:center;min-width:max-content;padding-inline:8px}
+.tn{display:flex;flex-direction:column;align-items:center}
+.tbox{width:clamp(112px,31vw,190px);background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;font-size:.84rem;line-height:1.3;cursor:pointer;display:flex;flex-direction:column;gap:3px;box-shadow:var(--shadow);position:relative}
+.tbox:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tbox .ttxt{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.tbox .tsym{position:absolute;top:-9px;right:-9px;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:.72rem;font-weight:700;color:var(--surface)}
+.tbox.ok .tsym{background:var(--ok)} .tbox.fail .tsym{background:var(--fail)}
+.tbox.onpath{border-color:var(--accent)}
+.tbox.cur{border-color:var(--mark);background:color-mix(in srgb,var(--mark) 24%,var(--surface));border-width:2.5px}
+.tbox.dead{opacity:.55}.tbox.dead .ttxt{text-decoration:line-through;text-decoration-color:var(--fail)}
+.tbox .tfork{font-family:var(--f-mono);font-size:.68rem;color:var(--accent)}
+.stem{width:2px;height:18px;background:var(--line)}
+.stem.on{background:var(--accent)}
+.stem.dash{background:none;border-left:2px dashed var(--line)}
+.kids{display:flex;gap:14px;align-items:flex-start}
+.kid{position:relative;display:flex;flex-direction:column;align-items:center;padding-top:16px}
+.kid::before{content:"";position:absolute;top:0;left:-7px;right:-7px;border-top:2px solid var(--line)}
+.kid:first-child::before{left:50%}.kid:last-child::before{right:50%}
+.kid:only-child::before{display:none}
+.kid::after{content:"";position:absolute;top:0;left:50%;width:2px;height:16px;margin-left:-1px;background:var(--line)}
+.kid.on::after{background:var(--accent)}
+.kid.addkid::after{background:none;border-left:2px dashed var(--line);width:0}
+.blabel{font-family:var(--f-mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:5px}
+.kid.on>.blabel{color:var(--accent);font-weight:500}
+.tadd{border:1.5px dashed var(--line);background:transparent;color:var(--muted);font-size:.8rem;min-height:38px;padding:6px 12px;border-radius:10px;white-space:nowrap}
+.tadd:hover{border-color:var(--accent);color:var(--accent)}
+
+.bubble-on{align-self:flex-start;border-color:var(--accent);color:var(--accent);font-weight:600}
+body.bubble{background:var(--surface)}
+body.bubble .wrap{padding-block:12px 16px;gap:10px;max-width:none}
+body.bubble .top{display:none}
+.bub{display:flex;flex-direction:column;gap:12px}
+.bhead{display:flex;gap:6px;align-items:center}
+.bhead select{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:9px 8px;font-weight:600;min-height:42px}
+.btrail{font-size:.78rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.btrail span{max-width:14ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btrail span.fail{text-decoration:line-through}.btrail i{font-style:normal}
+.bnow{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:12px;background:color-mix(in srgb,var(--mark) 18%,var(--surface));border:1.5px solid var(--mark)}
+.bchips{display:flex;gap:6px;overflow-x:auto;padding:4px 0}
+.bchips button{white-space:nowrap;min-height:38px;font-size:.84rem;flex:none}
+.bchips button.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--surface));font-weight:600}
+.bchips button.fail{opacity:.6;text-decoration:line-through}
+.badd{display:flex;gap:8px}.badd input{flex:1;min-width:0}
+section.block{display:flex;flex-direction:column;gap:12px}
+.block-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+
+/* bar bawah HP */
+.dock{position:fixed;left:0;right:0;bottom:0;padding:10px max(16px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-top:1px solid var(--line);display:flex;justify-content:center;gap:8px;z-index:20}
+.dock button{flex:1;max-width:220px;justify-content:center;white-space:nowrap;padding-inline:8px}
+
+/* pop-up */
+.scrim{position:fixed;inset:0;background:rgba(10,16,14,.45);display:flex;align-items:flex-end;justify-content:center;z-index:40;padding:0 max(0px,env(safe-area-inset-right,0px)) 0 max(0px,env(safe-area-inset-left,0px))}
+.sheet{background:var(--surface);width:100%;max-width:560px;border-radius:16px 16px 0 0;padding:20px max(18px,env(safe-area-inset-left,0px)) calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px;max-height:90vh;overflow:auto}
+@media (min-width:700px){.scrim{align-items:center}.sheet{border-radius:16px}}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:.9rem}
+.check input{margin-top:4px;width:18px;height:18px;accent-color:var(--accent)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:10px;font-size:.88rem;z-index:50;display:flex;gap:12px;align-items:center;max-width:calc(100% - 32px);box-shadow:var(--shadow)}
+.toast button{background:transparent;color:var(--mark);border:0;min-height:0;padding:0;font-weight:600}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;font-size:.9rem;align-items:center}
+.notice{font-size:.82rem;color:var(--muted);border-left:3px solid var(--line);padding-left:10px}
+@media (max-width:420px){.actions button{font-size:.78rem}}
+@media (prefers-reduced-motion:no-preference){.toast{animation:up .18s ease-out}@keyframes up{from{opacity:.4;transform:translate(-50%,8px)}}}
+</style>
+
+<div class="wrap" id="app">
+  <div class="top">
+    <div>
+      <div class="eyebrow">Catatan uji coba · HP &amp; laptop</div>
+      <h1>Jejak Langkah</h1>
+    </div>
+    <div class="sync" id="sync"><i></i><span>Menyambung…</span></div>
+  </div>
+  <div id="view"><p class="muted">Memuat catatan…</p></div>
+</div>
+<div id="dock" class="dock" hidden></div>
+<div id="overlay"></div>
+
+<script>
+(function(){
+const $=s=>document.querySelector(s);
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt=t=>{try{return new Date(t).toLocaleString("id-ID",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}catch(e){return""}};
+
+let journeys={};      // id -> jejak
+let openId=null;
+let col=null;         // koleksi db pribadi
+const pending={};     // debounce tulis
+const LS="jejak-langkah-v1";
+
+/* ---------- penyimpanan ---------- */
+function lsLoad(){try{return JSON.parse(localStorage.getItem(LS)||"{}")}catch(e){return{}}}
+function lsSave(){try{localStorage.setItem(LS,JSON.stringify(journeys))}catch(e){}}
+function save(j){
+  j.updatedAt=Date.now();
+  lsSave();
+  if(!col)return;
+  clearTimeout(pending[j.id]);
+  pending[j.id]=setTimeout(()=>{
+    const body=JSON.parse(JSON.stringify(j));
+    col.doc(j.id).set(body).catch(()=>setSync(false,"Gagal sinkron — tersimpan di perangkat ini")).finally(()=>{delete pending[j.id]});
+  },350);
+}
+function removeJ(id){delete journeys[id];lsSave();if(col)col.doc(id).delete().catch(()=>{});}
+function setSync(on,text){const el=$("#sync");el.classList.toggle("on",on);el.querySelector("span").textContent=text;}
+
+/* ---------- model ---------- */
+function newJourney(title,device,contoh){
+  const rootId=uid();
+  const j={id:uid(),title,device,createdAt:Date.now(),updatedAt:Date.now(),rootId,current:rootId,
+    nodes:{[rootId]:{id:rootId,parent:null,text:"Mulai: "+title,note:"",status:"pending",fork:false,ts:Date.now()}}};
+  if(contoh)j.contoh=true;
+  return j;
+}
+const kids=(j,id)=>Object.values(j.nodes).filter(n=>n.parent===id).sort((a,b)=>a.ts-b.ts);
+function pathTo(j,id){const p=[];let n=j.nodes[id];while(n){p.unshift(n);n=n.parent?j.nodes[n.parent]:null}return p;}
+function addStep(j,text,note,fork){
+  const n={id:uid(),parent:j.current,text,note,status:"pending",fork:!!fork,ts:Date.now()};
+  j.nodes[n.id]=n;j.current=n.id;save(j);return n;
+}
+function nearestFork(j){
+  let n=j.nodes[j.current];if(!n)return null;
+  let p=n.parent?j.nodes[n.parent]:null;
+  while(p){if(p.fork||kids(j,p.id).length>1)return p;p=p.parent?j.nodes[p.parent]:null}
+  return null;
+}
+function branchBelow(j,forkId){ // node anak percabangan yang berisi posisi sekarang
+  const p=pathTo(j,j.current);const i=p.findIndex(n=>n.id===forkId);return p.slice(i+1);
+}
+
+function exampleJourney(){
+  const j=newJourney("Contoh: sambungkan HP ke laptop lewat USB debugging","HP",true);
+  const r=j.nodes[j.rootId];r.status="ok";
+  const s1=addStep(j,"Buka Setelan › Tentang ponsel, ketuk Nomor bentukan 7×","Opsi pengembang aktif");s1.status="ok";
+  const s2=addStep(j,"Setelan › Opsi pengembang › nyalakan USB debugging","");s2.status="ok";
+  const f=addStep(j,"Colok kabel. Muncul pilihan mode USB","Pilihan: Isi daya saja / Transfer file / PTP",true);f.status="ok";
+  const a=addStep(j,"Pilih 'Isi daya saja'","Laptop tidak mendeteksi HP");a.status="fail";
+  j.current=f.id;
+  const b=addStep(j,"Pilih 'Transfer file (MTP)'","Muncul pop-up izinkan debugging di HP");b.status="ok";
+  const c=addStep(j,"Ketuk 'Izinkan' dan centang 'Selalu izinkan'","");c.status="pending";
+  j.current=c.id;
+  return j;
+}
+
+/* ---------- tampilan ---------- */
+function render(){
+  const v=$("#view");const dock=$("#dock");
+  if(!openId||!journeys[openId]){openId=null;dock.hidden=true;v.innerHTML=listHTML();bindList();{const bb=$("#bubble-on");if(bb)bb.onclick=()=>window.Android.startBubble()}return}
+  const j=journeys[openId];try{localStorage.setItem(LAST_KEY,openId)}catch(e){}v.innerHTML=journeyHTML(j);bindJourney(j);{const bb=$("#bubble-on");if(bb)bb.onclick=()=>window.Android.startBubble()}
+  dock.hidden=false;
+  dock.innerHTML=`<button id="d-back" title="Mundur 1 langkah (B)">↶ Mundur</button><button class="primary" id="d-add" title="Langkah baru (N)">+ Langkah</button><button id="d-fork" title="Pindah ke cabang lain (J)">⑂ Cabang lain</button>`;
+  $("#d-back").onclick=()=>goBack(j);$("#d-add").onclick=()=>openAdd(j);$("#d-fork").onclick=()=>goFork(j);
+  $("#d-back").disabled=!j.nodes[j.current]?.parent;
+}
+
+function listHTML(){
+  const arr=Object.values(journeys).sort((a,b)=>b.updatedAt-a.updatedAt);
+  const cards=arr.map(j=>{
+    const n=Object.keys(j.nodes).length-1;const cur=j.nodes[j.current];
+    const forks=Object.values(j.nodes).filter(x=>x.fork||kids(j,x.id).length>1).length;
+    return `<button class="jcard" data-open="${j.id}"><span class="t">${esc(j.title)}</span><span class="row" style="gap:6px">${j.contoh?'<span class="chip contoh">contoh</span>':''}<span class="chip">${esc(j.device)}</span></span>
+      <span class="m"><span>${n} langkah</span><span>${forks} percabangan</span><span>terakhir: ${esc(cur?cur.text.slice(0,40):"")}${cur&&cur.text.length>40?"…":""}</span><span>${fmt(j.updatedAt)}</span></span></button>`;
+  }).join("");
+  return `<div style="display:flex;flex-direction:column;gap:18px">
+    ${bubbleBtn()}
+    <p class="muted" style="margin:0;max-width:60ch">Catat setiap langkah saat mencoba setting. Kalau di ujung ternyata salah pilih, kembali ke titik percabangan dan coba jalan lain — semua cabang tetap tersimpan.</p>
+    <form class="newj" id="newj">
+      <h2>Mulai jejak baru</h2>
+      <label class="field">Apa yang mau kamu atur?<input type="text" id="nj-title" placeholder="mis. Hubungkan printer ke WiFi laptop" required></label>
+      <div class="row"><span class="muted" style="font-size:.85rem">Perangkat</span>
+        <div class="seg" role="group" id="nj-dev"><button type="button" aria-pressed="true" data-d="HP">HP</button><button type="button" aria-pressed="false" data-d="Laptop">Laptop</button><button type="button" aria-pressed="false" data-d="Keduanya">Keduanya</button></div>
+      </div>
+      <div><button class="primary" type="submit">Mulai mencatat</button></div>
+    </form>
+    <section class="block"><div class="block-head"><h2>Jejak tersimpan</h2><span class="eyebrow">${arr.length} jejak</span></div>
+      <div class="jlist">${cards||'<p class="muted">Belum ada jejak. Mulai satu di atas.</p>'}</div></section>
+    <p class="notice">Di laptop: <kbd>N</kbd> langkah baru · <kbd>B</kbd> mundur · <kbd>J</kbd> cabang lain · <kbd>?</kbd> semua shortcut.</p>
+  </div>`;
+}
+function bindList(){
+  document.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>{openId=b.dataset.open;render();scrollTo(0,0)});
+  let dev="HP";
+  document.querySelectorAll("#nj-dev button").forEach(b=>b.onclick=()=>{dev=b.dataset.d;document.querySelectorAll("#nj-dev button").forEach(x=>x.setAttribute("aria-pressed",x===b))});
+  $("#newj").onsubmit=e=>{e.preventDefault();const t=$("#nj-title").value.trim();if(!t)return;
+    const j=newJourney(t,dev);journeys[j.id]=j;save(j);openId=j.id;render();openAdd(j);};
+}
+
+function branchNo(j,n){if(!n.parent)return 0;const sib=kids(j,n.parent);return sib.length>1?sib.findIndex(s=>s.id===n.id)+1:0}
+function newestLeaf(j,id){let n=j.nodes[id];for(;;){const k=kids(j,n.id);if(!k.length)return n;n=k.reduce((a,b)=>b.ts>a.ts?b:a)}}
+function journeyHTML(j){
+  const cur=j.nodes[j.current];const path=pathTo(j,j.current);const st=cur.status;
+  const onPath=new Set(path.map(n=>n.id));
+  const bn=branchNo(j,cur);
+  const tree=(id,dead)=>{
+    const n=j.nodes[id];const ks=kids(j,id);const isFork=n.fork||ks.length>1;
+    const isDead=dead||n.status==="fail";
+    const sym={ok:"✓",fail:"✗",pending:""}[n.status];
+    const box=`<div class="tbox ${onPath.has(id)?'onpath':''} ${id===j.current?'cur':''} ${n.status} ${isDead?'dead':''}" tabindex="0" data-jump="${id}" role="button" aria-label="${esc(n.text)}">
+      ${sym?`<span class="tsym">${sym}</span>`:''}<span class="ttxt">${esc(n.text)}</span>${isFork?'<span class="tfork">⑂ pilih</span>':''}</div>`;
+    let below="";
+    if(ks.length===1&&!isFork){below=`<div class="stem ${onPath.has(ks[0].id)?'on':''}"></div>${tree(ks[0].id,isDead)}`}
+    else if(ks.length||isFork){
+      below=`<div class="stem ${ks.some(k=>onPath.has(k.id))?'on':''}"></div><div class="kids">${ks.map((k,i)=>`<div class="kid ${onPath.has(k.id)?'on':''}"><div class="blabel">Cabang ${i+1}</div>${tree(k.id,isDead)}</div>`).join("")}
+        <div class="kid addkid"><div class="blabel">&nbsp;</div><button class="tadd" data-addunder="${id}">+ cabang ${ks.length+1}</button></div></div>`}
+    if(id===j.current&&!ks.length&&!isFork){below+=`<div class="stem dash"></div><button class="tadd" data-addunder="${id}">+ langkah berikutnya</button>`}
+    return `<div class="tn">${box}${below}</div>`;
+  };
+  return `<div style="display:flex;flex-direction:column;gap:18px">
+    <div class="row" style="justify-content:space-between">
+      <button class="ghost" id="to-list">← Semua jejak</button>${bubbleBtn()}
+      <div class="row"><button class="ghost" id="copy" title="Salin ringkasan untuk ditanyakan ke Claude">Salin ringkasan</button><button class="ghost" id="keys" title="Shortcut (?)">⌨</button></div>
+    </div>
+    <div><div class="eyebrow">${esc(j.device)}${j.contoh?' · contoh':''}</div><h2 style="font-size:1.5rem;margin-top:4px">${esc(j.title)}</h2></div>
+
+    <section class="now" aria-label="Posisi sekarang">
+      <div class="step-no">KAMU DI SINI · LANGKAH ${path.length-1}${bn?' · CABANG '+bn:''}</div>
+      <div class="txt">${esc(cur.text)}</div>
+      ${cur.note?`<div class="note">${esc(cur.note)}</div>`:''}
+      <div class="row status-btns" role="group" aria-label="Hasil langkah ini">
+        <button data-s="ok" aria-pressed="${st==='ok'}">✓ Berhasil</button>
+        <button data-s="fail" aria-pressed="${st==='fail'}">✗ Gagal</button>
+        <button data-s="pending" aria-pressed="${st==='pending'}">Belum tahu</button>
+        <button class="ghost" id="edit-cur">Ubah</button>
+      </div>
+    </section>
+
+    <section class="block"><div class="block-head"><h2>Peta langkah</h2>
+      <span class="legend"><span style="color:var(--ok)">✓ berhasil</span><span style="color:var(--fail)">✗ gagal</span><span>ketuk kotak untuk pindah · geser ke samping kalau cabang banyak</span></span></div>
+      <div class="treewrap" id="treewrap"><div class="treein">${tree(j.rootId,false)}</div></div></section>
+
+    <div><button class="ghost danger" id="del">Hapus jejak ini</button></div>
+  </div>`;
+}
+function bindJourney(j){
+  $("#to-list").onclick=()=>{openId=null;render()};
+  document.querySelectorAll(".status-btns button[data-s]").forEach(b=>b.onclick=()=>setStatus(j,b.dataset.s));
+  $("#edit-cur").onclick=()=>openEdit(j);
+  document.querySelectorAll("[data-jump]").forEach(el=>{const go=()=>{if(j.current===el.dataset.jump)return;j.current=el.dataset.jump;save(j);render()};el.onclick=go;el.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();go()}}});
+  document.querySelectorAll("[data-addunder]").forEach(b=>b.onclick=()=>openAdd(j,b.dataset.addunder));
+  $("#copy").onclick=()=>copySummary(j);
+  $("#keys").onclick=openKeys;
+  $("#del").onclick=()=>sheet(`<h2>Hapus jejak ini?</h2><p class="muted" style="margin:0">"${esc(j.title)}" dan semua cabangnya akan hilang dari HP dan laptop.</p><div class="row"><button id="yes" style="background:var(--fail);border-color:var(--fail);color:var(--surface)">Hapus</button><button id="no">Batal</button></div>`,()=>{
+    $("#yes").onclick=()=>{removeJ(j.id);openId=null;closeSheet();render();toast("Jejak dihapus")};$("#no").onclick=closeSheet;});
+  requestAnimationFrame(()=>{const c=document.querySelector(".tbox.cur");const w=$("#treewrap");if(c&&w){const r=c.getBoundingClientRect(),wr=w.getBoundingClientRect();w.scrollLeft+=r.left-wr.left-(wr.width-r.width)/2}});
+}
+
+/* ---------- aksi ---------- */
+function setStatus(j,s){j.nodes[j.current].status=s;save(j);render();
+  if(s==="fail")toast("Ditandai gagal",{label:"Coba cabang lain",fn:()=>goFork(j)});
+  else toast({ok:"Ditandai berhasil",pending:"Status dikosongkan"}[s])}
+function goBack(j){const c=j.nodes[j.current];if(!c.parent)return;const from=c;j.current=c.parent;save(j);render();
+  toast("Mundur ke langkah sebelumnya",{label:"Batal",fn:()=>{j.current=from.id;save(j);render()}})}
+function forkOf(j){ // percabangan terdekat: posisi sekarang sendiri (kalau sudah bercabang) atau di atasnya
+  const path=pathTo(j,j.current);
+  for(let i=path.length-1;i>=0;i--){const n=path[i];if(i===path.length-1){if(kids(j,n.id).length>1)return n;continue}if(n.fork||kids(j,n.id).length>1)return n}
+  return null;
+}
+function goFork(j){
+  const fk=forkOf(j);const path=pathTo(j,j.current);
+  if(!fk){
+    if(path.length<2){toast("Belum ada percabangan. Saat tambah langkah, isi beberapa pilihan");return}
+    sheet(`<div class="eyebrow">Belum ada percabangan</div><h2>Di langkah mana kamu tadi harus memilih?</h2>
+      <p class="muted" style="margin:0">Pilih langkahnya, lalu tulis pilihan lain yang mau dicoba. Jalan yang sekarang jadi Cabang 1.</p>
+      <div style="display:flex;flex-direction:column;gap:8px">${path.slice(0,-1).reverse().map(n=>`<button data-pick="${n.id}" style="justify-content:flex-start;text-align:left;width:100%"><span style="min-width:0;overflow-wrap:anywhere">${esc(n.text)}</span></button>`).join("")}</div>
+      <div><button class="ghost" id="fk-no">Batal</button></div>`,()=>{
+      $("#fk-no").onclick=closeSheet;
+      document.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{const n=j.nodes[b.dataset.pick];n.fork=true;save(j);closeSheet();openAdd(j,n.id)});});
+    return;
+  }
+  const ks=kids(j,fk.id);const onPath=new Set(path.map(n=>n.id));
+  const curKid=ks.find(k=>onPath.has(k.id));
+  sheet(`<div class="eyebrow">Percabangan</div><h2>${esc(fk.text)}</h2>
+    <p class="muted" style="margin:0">Pilih cabang yang mau dicoba.</p>
+    <div style="display:flex;flex-direction:column;gap:8px">${ks.map((k,i)=>{const s={ok:"✓",fail:"✗",pending:"•"}[k.status];const here=k===curKid;
+      return `<button data-go="${k.id}" ${here?'disabled':''} style="justify-content:flex-start;text-align:left;width:100%;${k.status==='fail'?'opacity:.6':''}"><strong style="white-space:nowrap">Cabang ${i+1}</strong><span style="min-width:0;overflow-wrap:anywhere">${s} ${esc(k.text)}${here?' — sedang dicoba':''}</span></button>`}).join("")}
+      <button class="tadd" id="fk-new" style="width:100%">+ Cabang ${ks.length+1} (pilihan baru)</button></div>
+    ${curKid&&curKid.status!=="fail"?`<label class="check"><input type="checkbox" id="fk-mark" checked><span>Tandai cabang yang sekarang sebagai gagal</span></label>`:''}
+    <div><button class="ghost" id="fk-no">Batal</button></div>`,()=>{
+    $("#fk-no").onclick=closeSheet;
+    const markLeft=()=>{const m=$("#fk-mark");if(m&&m.checked&&curKid){curKid.status="fail";const last=j.nodes[j.current];if(last.status==="pending")last.status="fail"}};
+    $("#fk-new").onclick=()=>{markLeft();save(j);closeSheet();openAdd(j,fk.id)};
+    document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{markLeft();const k=j.nodes[b.dataset.go];j.current=newestLeaf(j,k.id).id;save(j);closeSheet();render();
+      toast(`Sekarang mencoba Cabang ${ks.findIndex(x=>x.id===k.id)+1}`)});});
+}
+function openAdd(j,parentId){
+  const pid=parentId||j.current;const par=j.nodes[pid];const siblings=kids(j,pid);
+  const isBranch=siblings.length>0;
+  sheet(`<div class="eyebrow">Setelah: "${esc(par.text.slice(0,48))}${par.text.length>48?'…':''}"</div>
+    <h2>${isBranch?`Tambah Cabang ${siblings.length+1}`:'Langkah berikutnya'}</h2>
+    ${isBranch?`<p class="notice" style="margin:0">Cabang yang sudah ada: ${siblings.map((s,i)=>`${i+1}. ${s.status==='fail'?'✗':s.status==='ok'?'✓':'•'} ${esc(s.text)}`).join(" · ")}</p>`:''}
+    <form id="addf" style="display:flex;flex-direction:column;gap:12px">
+      <label class="field">${isBranch?'Pilihan apa yang mau dicoba?':'Apa yang kamu lakukan?'}<input type="text" id="af-text" placeholder="${isBranch?'mis. Pilih Transfer file':'mis. Buka Setelan › Bluetooth'}" required></label>
+      <label class="field">Apa yang terjadi? (opsional)<textarea id="af-note" placeholder="Muncul pesan, pilihan di layar, kode error…"></textarea></label>
+      ${isBranch?'':`<label class="check"><input type="checkbox" id="af-fork"><span>Setelah langkah ini ada beberapa pilihan</span></label>
+      <div id="af-opts" hidden style="display:flex;flex-direction:column;gap:8px">
+        <label class="field">Cabang 1<input type="text" class="af-opt" placeholder="mis. Isi daya saja"></label>
+        <label class="field">Cabang 2<input type="text" class="af-opt" placeholder="mis. Transfer file"></label>
+        <button type="button" class="ghost" id="af-more" style="align-self:flex-start">+ pilihan lain</button>
+        <p class="notice" style="margin:0">Kamu mulai dari Cabang 1. Kalau gagal, tekan ⑂ untuk pindah ke Cabang 2.</p></div>`}
+      <div class="row"><button class="primary" type="submit">Simpan</button><button type="button" id="af-cancel">Batal</button></div>
+    </form>`,()=>{
+    $("#af-text").focus();$("#af-cancel").onclick=closeSheet;
+    const fc=$("#af-fork");
+    if(fc){fc.onchange=()=>{$("#af-opts").hidden=!fc.checked};
+      $("#af-more").onclick=()=>{const n=document.querySelectorAll(".af-opt").length+1;const l=document.createElement("label");l.className="field";l.innerHTML=`Cabang ${n}<input type="text" class="af-opt">`;$("#af-more").before(l);l.querySelector("input").focus()}}
+    const submit=()=>{const t=$("#af-text").value.trim();if(!t){$("#af-text").focus();return}
+      const prev=j.current;j.current=pid;
+      const opts=fc&&fc.checked?[...document.querySelectorAll(".af-opt")].map(i=>i.value.trim()).filter(Boolean):[];
+      const n=addStep(j,t,$("#af-note").value.trim(),opts.length>0);
+      if(opts.length){let first=null;opts.forEach((o,i)=>{const c={id:uid(),parent:n.id,text:o,note:"",status:"pending",fork:false,ts:Date.now()+i};j.nodes[c.id]=c;if(!first)first=c});j.current=first.id;save(j)}
+      closeSheet();render();
+      toast(opts.length?`${opts.length} cabang dibuat · mulai dari Cabang 1`:isBranch?`Cabang ${siblings.length+1} dibuat`:"Langkah dicatat",{label:"Urungkan",fn:()=>{Object.values(j.nodes).forEach(x=>{if(x.parent===n.id)delete j.nodes[x.id]});delete j.nodes[n.id];j.current=prev;save(j);render()}})};
+    $("#addf").onsubmit=e=>{e.preventDefault();submit()};
+    $("#af-note").onkeydown=e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();submit()}};
+  });
+}
+function openEdit(j){
+  const c=j.nodes[j.current];
+  sheet(`<h2>Ubah langkah</h2><form id="edf" style="display:flex;flex-direction:column;gap:12px">
+    <label class="field">Langkah<input type="text" id="ed-text" value="${esc(c.text)}" required></label>
+    <label class="field">Catatan<textarea id="ed-note">${esc(c.note)}</textarea></label>
+    <div class="row"><button class="primary" type="submit">Simpan</button><button type="button" id="ed-c">Batal</button></div></form>`,()=>{
+    $("#ed-text").focus();$("#ed-c").onclick=closeSheet;
+    $("#edf").onsubmit=e=>{e.preventDefault();c.text=$("#ed-text").value.trim()||c.text;c.note=$("#ed-note").value.trim();save(j);closeSheet();render();toast("Langkah diperbarui")};});
+}
+function openKeys(){
+  sheet(`<h2>Shortcut keyboard</h2><div class="keys">
+    <span><kbd>N</kbd></span><span>Tambah langkah berikutnya (pop-up)</span>
+    <span><kbd>B</kbd></span><span>Mundur 1 langkah</span>
+    <span><kbd>J</kbd></span><span>Pindah ke cabang lain</span>
+    <span><kbd>1</kbd> / <kbd>2</kbd></span><span>Tandai langkah sekarang berhasil / gagal</span>
+        <span><kbd>Enter</kbd></span><span>Simpan langkah di pop-up</span>
+    <span><kbd>Esc</kbd></span><span>Tutup pop-up</span></div>
+    <p class="notice">Di HP, pakai tombol di bar bawah. Agar cepat dibuka, simpan halaman ini ke layar utama HP atau pin di browser laptop.</p>
+    <div><button id="k-ok">Tutup</button></div>`,()=>{$("#k-ok").onclick=closeSheet});
+}
+function copySummary(j){
+  const lines=[`Jejak: ${j.title} (${j.device})`,""];
+  const walk=(id,d)=>{const n=j.nodes[id];const s={ok:"[berhasil]",fail:"[gagal]",pending:"[belum]"}[n.status];
+    lines.push(`${"  ".repeat(d)}- ${n.text} ${s}${n.fork?" (percabangan)":""}${id===j.current?"  <-- posisi sekarang":""}`);
+    if(n.note)lines.push(`${"  ".repeat(d+1)}catatan: ${n.note.replace(/\n/g," ")}`);
+    kids(j,id).forEach(k=>walk(k.id,d+1))};
+  walk(j.rootId,0);const text=lines.join("\n");
+  const done=()=>toast("Ringkasan disalin — tempel ke Claude saat butuh bantuan");
+  try{navigator.clipboard.writeText(text).then(done,()=>showCopy(text))}catch(e){showCopy(text)}
+}
+function showCopy(text){sheet(`<h2>Salin ringkasan</h2><textarea id="cp" style="min-height:220px;font-family:var(--f-mono);font-size:.8rem">${esc(text)}</textarea><div><button id="cp-ok">Tutup</button></div>`,()=>{const t=$("#cp");t.focus();t.select();$("#cp-ok").onclick=closeSheet})}
+
+/* ---------- pop-up & toast ---------- */
+let lastFocus=null;
+function sheet(html,bind){lastFocus=document.activeElement;$("#overlay").innerHTML=`<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
+  $("#scrim").onclick=e=>{if(e.target.id==="scrim")closeSheet()};bind&&bind();}
+function closeSheet(){$("#overlay").innerHTML="";try{lastFocus&&lastFocus.focus()}catch(e){}}
+let tt;function toast(msg,action){const old=document.querySelector(".toast");old&&old.remove();clearTimeout(tt);
+  const el=document.createElement("div");el.className="toast";el.setAttribute("role","status");el.innerHTML=`<span>${esc(msg)}</span>`;
+  if(action){const b=document.createElement("button");b.textContent=action.label;b.onclick=()=>{el.remove();action.fn()};el.appendChild(b)}
+  document.body.appendChild(el);tt=setTimeout(()=>el.remove(),action?6000:2800);}
+
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&$("#overlay").innerHTML){closeSheet();return}
+  const tag=(e.target.tagName||"").toLowerCase();if(tag==="input"||tag==="textarea"||e.ctrlKey||e.metaKey||e.altKey)return;
+  if($("#overlay").innerHTML)return;
+  if(e.key==="?"){openKeys();return}
+  const j=openId&&journeys[openId];if(!j)return;
+  const k=e.key.toLowerCase();
+  if(k==="n"){e.preventDefault();openAdd(j)} else if(k==="b"){goBack(j)} else if(k==="j"){goFork(j)}
+  else if(k==="1"){setStatus(j,"ok")} else if(k==="2"){setStatus(j,"fail")}
+  else if(k==="f"){$("#toggle-fork")?.click()}
+});
+
+/* ---------- mulai ---------- */
+const MODE=new URLSearchParams(location.search).get("mode")==="bubble"?"bubble":"app";
+const CODE_KEY="jl-code",LAST_KEY="jl-last";
+const getCode=()=>{try{return localStorage.getItem(CODE_KEY)||""}catch(e){return""}};
+const setCode=c=>{try{localStorage.setItem(CODE_KEY,c)}catch(e){}};
+function newCode(){const a="abcdefghjkmnpqrstuvwxyz23456789";let s="";const r=crypto.getRandomValues(new Uint8Array(20));r.forEach((x,i)=>{s+=a[x%a.length];if(i%5===4&&i<19)s+="-"});return s}
+function rerender(){const a=document.activeElement;if(a&&MODE==="bubble"&&(a.tagName==="INPUT"||a.tagName==="SELECT"))return;if($("#overlay").innerHTML)return;MODE==="bubble"?renderBubble():render()}
+function bubbleBtn(){return window.Android&&window.Android.startBubble?`<button id="bubble-on" class="bubble-on" title="Bubble bulat yang melayang di atas aplikasi lain">◉ Tampilkan bubble</button>`:''}
+
+let unsub=null;
+function startSync(){
+  const code=getCode();const CFG=window.FIREBASE_CONFIG;
+  if(unsub){unsub();unsub=null}col=null;
+  if(!CFG||!CFG.apiKey||!window.firebase){setSync(false,"Sinkron belum diatur");return}
+  if(!code){setSync(false,"Belum tersambung · ketuk di sini");return}
+  try{
+    if(!firebase.apps.length){firebase.initializeApp(CFG);try{firebase.firestore().enablePersistence({synchronizeTabs:true}).catch(()=>{})}catch(e){}}
+    col=firebase.firestore().collection("sync/"+code.replace(/[^a-z0-9-]/g,"")+"/jejak");
+    setSync(false,"Menyambung…");
+    let first=true;
+    unsub=col.onSnapshot(snap=>{
+      const remote={};snap.docs.forEach(d=>{const b=d.data();if(b&&b.nodes)remote[d.id]=JSON.parse(JSON.stringify(b))});
+      if(first){first=false;
+        if(snap.empty){Object.values(journeys).forEach(save)}
+        else{Object.values(journeys).forEach(j=>{if(!remote[j.id]&&!j.contoh)save(j)});
+          for(const k in journeys){if(journeys[k].contoh&&!remote[k])delete journeys[k]}}
+      }else{
+        snap.docChanges().forEach(ch=>{if(ch.type==="removed"&&!pending[ch.doc.id]){delete journeys[ch.doc.id];if(openId===ch.doc.id)openId=null}});
+      }
+      for(const k in remote){if(pending[k])continue;if(!journeys[k]||remote[k].updatedAt>=journeys[k].updatedAt)journeys[k]=remote[k]}
+      lsSave();setSync(true,snap.metadata.fromCache?"Offline · tersimpan, nanti disinkron":"Sinkron HP ↔ laptop");
+      rerender();
+    },()=>setSync(false,"Sinkron terputus · cek internet"));
+  }catch(e){setSync(false,"Sinkron gagal dimulai")}
+}
+
+function openSyncSheet(){
+  const code=getCode();const ok=window.FIREBASE_CONFIG&&window.FIREBASE_CONFIG.apiKey;
+  sheet(`<div class="eyebrow">Sinkron HP ↔ laptop</div><h2>${code?'Kode sinkronmu':'Sambungkan perangkat ini'}</h2>
+    ${!ok?'<p class="notice" style="margin:0">Firebase belum diisi di file firebase-config.js. Ikuti Langkah 2 di PANDUAN.</p>':''}
+    ${code?`<div class="row"><code style="font-family:var(--f-mono);font-size:1rem;padding:8px 10px;border:1px solid var(--line);border-radius:8px;user-select:all;overflow-wrap:anywhere">${esc(code)}</code><button id="sc-copy">Salin</button></div>
+      <p class="muted" style="margin:0">Masukkan kode ini di perangkat lain supaya jejaknya sama. Jangan bagikan ke orang lain.</p>`
+      :`<p class="muted" style="margin:0">Perangkat pertama: tekan <strong>Buat kode baru</strong>. Perangkat kedua: masukkan kode dari perangkat pertama.</p>`}
+    <form id="sc-form" style="display:flex;flex-direction:column;gap:8px">
+      <label class="field">${code?'Ganti dengan kode lain':'Kode dari perangkat lain'}<input type="text" id="sc-in" placeholder="xxxxx-xxxxx-xxxxx-xxxxx" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <div class="row"><button class="primary" type="submit">Sambungkan</button>${code?'':'<button type="button" id="sc-new">Buat kode baru</button>'}<button type="button" class="ghost" id="sc-close">Tutup</button></div>
+    </form>`,()=>{
+    $("#sc-close").onclick=closeSheet;
+    const cp=$("#sc-copy");if(cp)cp.onclick=()=>{try{navigator.clipboard.writeText(code).then(()=>toast("Kode disalin"),()=>toast("Tekan lama kodenya untuk menyalin"))}catch(e){}};
+    const nb=$("#sc-new");if(nb)nb.onclick=()=>{setCode(newCode());closeSheet();startSync();openSyncSheet()};
+    $("#sc-form").onsubmit=e=>{e.preventDefault();const c=$("#sc-in").value.trim().toLowerCase();
+      if(c.replace(/[^a-z0-9]/g,"").length<20){toast("Kodenya 20 huruf/angka, cek lagi");return}
+      setCode(c);for(const k in journeys){if(journeys[k].contoh)delete journeys[k]}lsSave();closeSheet();startSync();rerender();toast("Tersambung. Memuat jejak…")};
+  });
+}
+
+/* ---------- mode bubble (kartu kecil dari bubble HP) ---------- */
+function renderBubble(){
+  const v=$("#view");$("#dock").hidden=true;
+  let last="";try{last=localStorage.getItem(LAST_KEY)||""}catch(e){}
+  const arr=Object.values(journeys).sort((a,b)=>b.updatedAt-a.updatedAt);
+  if(!openId||!journeys[openId])openId=journeys[last]?last:(arr[0]&&arr[0].id);
+  const close=`<button class="ghost" id="b-close" aria-label="Tutup">✕</button>`;
+  if(!openId){v.innerHTML=`<div class="bub"><div class="bhead"><strong style="flex:1">Jejak Langkah</strong>${close}</div><p class="muted" style="margin:0">Belum ada jejak. Buat dulu di aplikasi.</p><div><button class="primary" id="b-open">Buka aplikasi</button></div></div>`;bindBubble(null);return}
+  const j=journeys[openId];const cur=j.nodes[j.current];const path=pathTo(j,j.current);const fk=forkOf(j);
+  const ks=fk?kids(j,fk.id):[];const onPath=new Set(path.map(n=>n.id));const bn=branchNo(j,cur);
+  const recent=path.slice(-4,-1);
+  v.innerHTML=`<div class="bub">
+    <div class="bhead"><select id="b-sel" aria-label="Pilih jejak">${arr.map(x=>`<option value="${x.id}" ${x.id===j.id?'selected':''}>${esc(x.title)}</option>`).join("")}</select><button class="ghost" id="b-open" title="Buka peta lengkap">Peta</button>${close}</div>
+    ${recent.length?`<div class="btrail">${recent.map(n=>`<span class="${n.status}">${esc(n.text)}</span>`).join('<i>›</i>')}</div>`:''}
+    <div class="bnow"><div class="step-no">KAMU DI SINI · LANGKAH ${path.length-1}${bn?' · CABANG '+bn:''}</div><div class="txt">${esc(cur.text)}</div>
+      <div class="row status-btns"><button data-s="ok" aria-pressed="${cur.status==='ok'}">✓ Berhasil</button><button data-s="fail" aria-pressed="${cur.status==='fail'}">✗ Gagal</button><button id="b-back" ${cur.parent?'':'disabled'}>↶ Mundur</button></div></div>
+    ${fk?`<div><div class="eyebrow">Cabang dari: ${esc(fk.text.slice(0,44))}</div><div class="bchips">${ks.map((k,i)=>`<button data-go="${k.id}" class="${onPath.has(k.id)?'on':''} ${k.status}">${i+1}. ${{ok:"✓ ",fail:"✗ ",pending:""}[k.status]}${esc(k.text.slice(0,30))}</button>`).join("")}</div></div>`:''}
+    <form id="b-add" class="badd"><input type="text" id="b-text" placeholder="Tulis langkah yang kamu lakukan…" enterkeyhint="done" autocomplete="off"><button class="primary" type="submit">+ Langkah</button></form>
+    <div><button class="ghost" id="b-branch">⑂ Simpan sebagai cabang lain</button></div>
+  </div>`;
+  bindBubble(j);
+}
+function bindBubble(j){
+  const A=window.Android;
+  $("#b-close").onclick=()=>{if(A&&A.collapse)A.collapse()};
+  $("#b-open").onclick=()=>{if(A&&A.openApp)A.openApp();else location.href=location.pathname};
+  if(!j)return;
+  $("#b-sel").onchange=e=>{openId=e.target.value;try{localStorage.setItem(LAST_KEY,openId)}catch(_){}e.target.blur();renderBubble()};
+  document.querySelectorAll(".bnow [data-s]").forEach(b=>b.onclick=()=>{j.nodes[j.current].status=b.dataset.s;save(j);renderBubble();if(b.dataset.s==="fail"&&forkOf(j))toast("Gagal? Ketuk cabang lain di bawah")});
+  $("#b-back").onclick=()=>{const c=j.nodes[j.current];if(c.parent){j.current=c.parent;save(j);renderBubble()}};
+  document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{j.current=newestLeaf(j,b.dataset.go).id;save(j);renderBubble()});
+  $("#b-add").onsubmit=e=>{e.preventDefault();const t=$("#b-text").value.trim();if(!t)return;addStep(j,t,"",false);$("#b-text").blur();renderBubble();toast("Langkah dicatat")};
+  $("#b-branch").onclick=()=>{const inp=$("#b-text");const t=inp.value.trim();if(!t){inp.placeholder="Tulis dulu pilihan lainnya…";inp.focus();return}
+    const fk=forkOf(j);const pid=fk?fk.id:(j.nodes[j.current].parent||j.current);j.nodes[pid].fork=true;j.current=pid;addStep(j,t,"",false);inp.blur();renderBubble();toast("Cabang baru dibuat")};
+}
+
+/* ---------- jalan ---------- */
+journeys=lsLoad();
+if(MODE==="app"&&!Object.keys(journeys).length){const ex=exampleJourney();journeys[ex.id]=ex;}
+if(MODE==="bubble")document.body.classList.add("bubble");
+$("#sync").onclick=()=>{if(MODE==="app")openSyncSheet()};
+MODE==="bubble"?renderBubble():render();
+startSync();
+if(MODE==="app"&&window.FIREBASE_CONFIG&&window.FIREBASE_CONFIG.apiKey&&!getCode())setTimeout(openSyncSheet,500);
+window.addEventListener("storage",e=>{if(e.key===LS&&!col){journeys=lsLoad();rerender()}});
+window.onBubbleShow=window.onAndroidResume=()=>{if(!col)journeys=lsLoad();try{const l=localStorage.getItem(LAST_KEY);if(MODE==="bubble"&&l&&journeys[l])openId=l}catch(e){}rerender()};
+if("serviceWorker" in navigator&&location.protocol==="https:"&&!window.Android)navigator.serviceWorker.register("sw.js").catch(()=>{});
+})();
+</script>
+</body>
+</html>
