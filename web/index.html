@@ -261,8 +261,8 @@ function exampleJourney(){
 /* ---------- tampilan ---------- */
 function render(){
   const v=$("#view");const dock=$("#dock");
-  if(!openId||!journeys[openId]){openId=null;dock.hidden=true;v.innerHTML=listHTML();bindList();{const bb=$("#bubble-on");if(bb)bb.onclick=()=>window.Android.startBubble()}return}
-  const j=journeys[openId];try{localStorage.setItem(LAST_KEY,openId)}catch(e){}v.innerHTML=journeyHTML(j);bindJourney(j);{const bb=$("#bubble-on");if(bb)bb.onclick=()=>window.Android.startBubble()}
+  if(!openId||!journeys[openId]){openId=null;dock.hidden=true;v.innerHTML=listHTML();bindList();{const bb=$("#bubble-on");if(bb)bb.onclick=startBubble}return}
+  const j=journeys[openId];try{localStorage.setItem(LAST_KEY,openId)}catch(e){}v.innerHTML=journeyHTML(j);bindJourney(j);{const bb=$("#bubble-on");if(bb)bb.onclick=startBubble}
   dock.hidden=false;
   dock.innerHTML=`<button id="d-back" title="Mundur 1 langkah (B)">↶ Mundur</button><button class="primary" id="d-add" title="Langkah baru (N)">+ Langkah</button><button id="d-fork" title="Pindah ke cabang lain (J)">⑂ Cabang lain</button>`;
   $("#d-back").onclick=()=>goBack(j);$("#d-add").onclick=()=>openAdd(j);$("#d-fork").onclick=()=>goFork(j);
@@ -491,7 +491,21 @@ const getCode=()=>{try{return localStorage.getItem(CODE_KEY)||""}catch(e){return
 const setCode=c=>{try{localStorage.setItem(CODE_KEY,c)}catch(e){}};
 function newCode(){const a="abcdefghjkmnpqrstuvwxyz23456789";let s="";const r=crypto.getRandomValues(new Uint8Array(20));r.forEach((x,i)=>{s+=a[x%a.length];if(i%5===4&&i<19)s+="-"});return s}
 function rerender(){const a=document.activeElement;if(a&&MODE==="bubble"&&(a.tagName==="INPUT"||a.tagName==="SELECT"))return;if($("#overlay").innerHTML)return;MODE==="bubble"?renderBubble():render()}
-function bubbleBtn(){return window.Android&&window.Android.startBubble?`<button id="bubble-on" class="bubble-on" title="Bubble bulat yang melayang di atas aplikasi lain">◉ Tampilkan bubble</button>`:''}
+const HAS_PIP=!window.Android&&"documentPictureInPicture" in window&&window.top===window;
+function bubbleBtn(){return window.Android&&window.Android.startBubble?`<button id="bubble-on" class="bubble-on" title="Bubble bulat yang melayang di atas aplikasi lain">◉ Tampilkan bubble</button>`
+  :HAS_PIP?`<button id="bubble-on" class="bubble-on" title="Jendela kecil yang selalu di atas aplikasi lain">◉ Bubble melayang</button>`:''}
+function startBubble(){if(window.Android&&window.Android.startBubble)window.Android.startBubble();else openPip()}
+let pipWin=null;
+async function openPip(){
+  if(pipWin){try{pipWin.focus()}catch(e){}return}
+  lsSave();
+  try{pipWin=await documentPictureInPicture.requestWindow({width:360,height:460})}catch(e){toast("Bubble tidak bisa dibuka di browser ini");return}
+  const d=pipWin.document;d.title="Jejak Langkah";
+  d.body.style.cssText="margin:0;height:100vh;overflow:hidden";
+  const f=d.createElement("iframe");f.src=location.pathname+"?mode=bubble";f.style.cssText="border:0;width:100%;height:100%;display:block";d.body.append(f);
+  pipWin.jlOpenApp=()=>{try{const l=localStorage.getItem(LAST_KEY);if(l&&journeys[l])openId=l}catch(e){}journeys=lsLoad();render();window.focus()};
+  pipWin.addEventListener("pagehide",()=>{pipWin=null;journeys=lsLoad();rerender()});
+}
 
 let unsub=null;
 function startSync(){
@@ -564,8 +578,9 @@ function renderBubble(){
 }
 function bindBubble(j){
   const A=window.Android;
-  $("#b-close").onclick=()=>{if(A&&A.collapse)A.collapse()};
-  $("#b-open").onclick=()=>{if(A&&A.openApp)A.openApp();else location.href=location.pathname};
+  const P=window.parent!==window?window.parent:null;
+  $("#b-close").onclick=()=>{if(A&&A.collapse)A.collapse();else if(P)P.close()};
+  $("#b-open").onclick=()=>{if(A&&A.openApp)A.openApp();else if(P&&P.jlOpenApp)P.jlOpenApp();else location.href=location.pathname};
   if(!j)return;
   $("#b-sel").onchange=e=>{openId=e.target.value;try{localStorage.setItem(LAST_KEY,openId)}catch(_){}e.target.blur();renderBubble()};
   document.querySelectorAll(".bnow [data-s]").forEach(b=>b.onclick=()=>{j.nodes[j.current].status=b.dataset.s;save(j);renderBubble();if(b.dataset.s==="fail"&&forkOf(j))toast("Gagal? Ketuk cabang lain di bawah")});
@@ -584,7 +599,7 @@ $("#sync").onclick=()=>{if(MODE==="app")openSyncSheet()};
 MODE==="bubble"?renderBubble():render();
 startSync();
 if(MODE==="app"&&window.FIREBASE_CONFIG&&window.FIREBASE_CONFIG.apiKey&&!getCode())setTimeout(openSyncSheet,500);
-window.addEventListener("storage",e=>{if(e.key===LS&&!col){journeys=lsLoad();rerender()}});
+window.addEventListener("storage",e=>{if(e.key===LS){const fresh=lsLoad();for(const k in fresh){if(!journeys[k]||fresh[k].updatedAt>=journeys[k].updatedAt)journeys[k]=fresh[k]}if(!col)journeys=fresh;rerender()}});
 window.onBubbleShow=window.onAndroidResume=()=>{if(!col)journeys=lsLoad();try{const l=localStorage.getItem(LAST_KEY);if(MODE==="bubble"&&l&&journeys[l])openId=l}catch(e){}rerender()};
 if("serviceWorker" in navigator&&location.protocol==="https:"&&!window.Android)navigator.serviceWorker.register("sw.js").catch(()=>{});
 })();
